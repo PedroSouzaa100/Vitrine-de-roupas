@@ -9,11 +9,6 @@
           <span class="brand-text"><?= e(SITE_NAME) ?></span>
         </div>
         <p class="text-muted-soft"><?= e(SITE_TAGLINE) ?>. Conectamos clientes a lojas de moda de todo o Brasil.</p>
-        <div class="social-row">
-          <a href="#" aria-label="Instagram"><i class="fa-brands fa-instagram"></i></a>
-          <a href="#" aria-label="WhatsApp"><i class="fa-brands fa-whatsapp"></i></a>
-          <a href="#" aria-label="Facebook"><i class="fa-brands fa-facebook"></i></a>
-        </div>
       </div>
       <div class="col-6 col-lg-2">
         <h6>Navegar</h6>
@@ -42,5 +37,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="<?= base_url('assets/js/main.js') ?>"></script>
+<script src="<?= e(base_url('assets/js/cart.js')) ?>?v=<?= filemtime(APP_ROOT . '/assets/js/cart.js') ?>"></script>
 </body>
 </html>

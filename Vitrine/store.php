@@ -1,12 +1,13 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/catalog.php';
 
-$slug = trim($_GET['slug'] ?? '');
+$slug = store_request_slug() ?? trim($_GET['slug'] ?? '');
 $pdo  = db();
 
 $st = $pdo->prepare("
     SELECT s.*, se.status AS seller_status, se.id AS seller_id, c.name AS gender_name,
-           u.name AS owner_name
+           u.status AS owner_status
     FROM stores s
     JOIN sellers se ON se.id = s.seller_id
     JOIN users u ON u.id = se.user_id
@@ -16,7 +17,7 @@ $st = $pdo->prepare("
 $st->execute([$slug]);
 $store = $st->fetch();
 
-if (!$store || !$store['active'] || $store['seller_status'] !== 'approved') {
+if (!$store || !$store['active'] || $store['seller_status'] !== 'approved' || $store['owner_status'] !== 'active') {
     http_response_code(404);
     $pageTitle = 'Loja não encontrada';
     require __DIR__ . '/includes/header.php';
@@ -61,7 +62,10 @@ $st = $pdo->prepare(
 $st->execute($params);
 $products = $st->fetchAll();
 
-$categories = get_categories('category');
+$st = $pdo->prepare("SELECT DISTINCT c.* FROM categories c JOIN products p ON p.category_id = c.id WHERE p.store_id = ? AND p.status = 'active' ORDER BY c.sort_order, c.name");
+$st->execute([$store['id']]);
+$categories = $st->fetchAll();
+$showStoreCatalog = true;
 
 $pageTitle = ($store['display_name'] ?: $store['name']) . ' — Loja';
 $metaDescription = excerpt($store['description'], 160);
@@ -72,6 +76,7 @@ require __DIR__ . '/includes/header.php';
 <div class="container py-4">
 
   <!-- Navegação -->
+  <a class="btn btn-outline-brand btn-sm mb-3" href="<?= e(base_url('seller/dashboard.php')) ?>" aria-label="Voltar ao dashboard do vendedor"><i class="fa-solid fa-arrow-left me-2" aria-hidden="true"></i> Voltar ao dashboard</a>
   <nav class="product-nav mb-3" aria-label="Navegação de contexto">
     <a class="btn btn-outline-brand btn-sm" href="<?= base_url('index.php') ?>">
       <i class="fa-solid fa-house me-2"></i> Página inicial
@@ -93,7 +98,7 @@ require __DIR__ . '/includes/header.php';
           <?php if ($store['verified']): ?><i class="fa-solid fa-circle-check text-primary"></i><?php endif; ?>
         </h1>
         <div class="store-meta mb-2">
-          <span><i class="fa-solid fa-shirt"></i> <?= count($products) ?> produto(s)</span>
+          <span><i class="fa-solid fa-shirt"></i> <?= $total ?> produto(s)</span>
           <?php if ($store['city']): ?>
             <span><i class="fa-solid fa-location-dot"></i> <?= e($store['city']) ?>/<?= e($store['state']) ?></span>
           <?php endif; ?>
@@ -108,7 +113,7 @@ require __DIR__ . '/includes/header.php';
 
       <!-- Ações da loja (somente contato e denúncia) -->
       <div class="store-hero-actions">
-        <?php if ($store['whatsapp']): ?>
+        <?php if (whatsapp_number($store['whatsapp'])): ?>
           <a class="btn btn-accent" href="<?= e(wa_link($store['whatsapp'], 'Olá! Vim pela plataforma Vitrine.')) ?>" target="_blank" rel="noopener">
             <i class="fa-brands fa-whatsapp me-2"></i> WhatsApp
           </a>
@@ -125,6 +130,12 @@ require __DIR__ . '/includes/header.php';
     </div>
   </div>
 
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h2 class="h5 fw-bold mb-0">Catálogo da loja</h2>
+    <a class="btn btn-brand" href="<?= e(base_url('cart.php')) ?>"><i class="fa-solid fa-cart-shopping me-2" aria-hidden="true"></i> Ver carrinho <span data-cart-count class="cart-counter">0</span></a>
+  </div>
+  <div class="mb-3" data-cart-message role="status" aria-live="polite"></div>
+  <noscript><p class="alert alert-info">Ative JavaScript para adicionar produtos ao carrinho.</p></noscript>
   <!-- Filtros internos -->
   <form class="form-card mb-4" method="get">
     <input type="hidden" name="slug" value="<?= e($store['slug']) ?>">

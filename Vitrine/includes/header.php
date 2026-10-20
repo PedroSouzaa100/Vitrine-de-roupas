@@ -20,9 +20,9 @@ $flashes = get_flashes();
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
-<link rel="stylesheet" href="<?= base_url('assets/css/style.css') ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/style.css') ?>?v=<?= filemtime(APP_ROOT . '/assets/css/style.css') ?>">
 </head>
-<body data-base="<?= base_url() ?>">
+<body data-base="<?= e(base_url()) ?>" data-csrf="<?= e(csrf_token()) ?>">
 
 <a href="#main" class="sr-only">Pular para o conteúdo</a>
 
@@ -53,7 +53,7 @@ $flashes = get_flashes();
       </div>
 
       <!-- Botão hamburguer (mobile) -->
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-label="Abrir menu">
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-label="Abrir menu" aria-controls="mainNav" aria-expanded="false">
         <i class="fa-solid fa-bars"></i>
       </button>
 
@@ -75,6 +75,8 @@ $flashes = get_flashes();
             </ul>
           </li>
           <li class="nav-item"><a class="nav-link" href="<?= base_url('stores.php') ?>">Lojas</a></li>
+
+          <li class="nav-item"><a class="nav-link cart-nav-link" href="<?= e(base_url('cart.php')) ?>"><i class="fa-solid fa-cart-shopping" aria-hidden="true"></i> Carrinho <span class="cart-counter" data-cart-count aria-live="polite">0</span></a></li>
 
           <?php if ($__user): ?>
             <?php if ($__user['role'] === 'seller'): ?>

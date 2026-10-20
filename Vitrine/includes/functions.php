@@ -12,35 +12,36 @@ function security_headers(): void
     header('X-Frame-Options: SAMEORIGIN');
     header('Referrer-Policy: strict-origin-when-cross-origin');
     header('Permissions-Policy: geolocation=(), microphone=(), camera=()');
+    $assetOrigin = APP_URL ? ' ' . APP_URL : '';
     header("Content-Security-Policy: default-src 'self'; "
-         . "img-src 'self' data: https:; "
-         . "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
-         . "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
-         . "script-src 'self' https://cdn.jsdelivr.net; "
-         . "connect-src 'self'; "
+         . "img-src 'self' data: blob: https:; "
+         . "style-src 'self'{$assetOrigin} 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
+         . "font-src 'self'{$assetOrigin} https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
+         . "script-src 'self'{$assetOrigin} https://cdn.jsdelivr.net; "
+         . "connect-src 'self'{$assetOrigin}; "
          . "frame-ancestors 'self'");
 }
 
 function rate_limit(string $key, int $max = 5, int $windowS = 300): void
 {
-    $ip  = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
     $dir = sys_get_temp_dir() . '/vitrine_rl';
-    if (!is_dir($dir)) @mkdir($dir, 0700, true);
-
-    $file = $dir . '/' . preg_replace('~[^a-z0-9_]~i', '_', $key . '_' . $ip) . '.json';
-    $now  = time();
-    $data = ['start' => $now, 'count' => 0];
-
-    if (is_file($file)) {
-        $raw = @file_get_contents($file);
-        $old = $raw ? json_decode($raw, true) : null;
-        if (is_array($old) && ($now - ($old['start'] ?? 0)) < $windowS) {
-            $data = $old;
-        }
+    if (!is_dir($dir) && !@mkdir($dir, 0700, true) && !is_dir($dir)) {
+        http_response_code(503); exit('Tente novamente mais tarde.');
     }
-
+    $file = $dir . '/' . hash('sha256', APP_ROOT . $key . $ip) . '.json';
+    $handle = @fopen($file, 'c+');
+    if (!$handle || !flock($handle, LOCK_EX)) {
+        if ($handle) fclose($handle);
+        http_response_code(503); exit('Tente novamente mais tarde.');
+    }
+    $now = time();
+    $old = json_decode(stream_get_contents($handle), true);
+    $data = is_array($old) && $now - ($old['start'] ?? 0) < $windowS ? $old : ['start' => $now, 'count' => 0];
     $data['count'] = ($data['count'] ?? 0) + 1;
-    @file_put_contents($file, json_encode($data), LOCK_EX);
+    rewind($handle); ftruncate($handle, 0);
+    fwrite($handle, json_encode($data)); fflush($handle);
+    flock($handle, LOCK_UN); fclose($handle);
 
     if ($data['count'] > $max) {
         http_response_code(429);
@@ -67,7 +68,7 @@ function e($value): string
 
 function base_url(string $path = ''): string
 {
-    return BASE_URL . ltrim($path, '/');
+    return (APP_URL ?: '') . BASE_URL . ltrim($path, '/');
 }
 
 function redirect(string $path): void
@@ -82,6 +83,10 @@ function redirect(string $path): void
 
 function url_store(string $slug): string
 {
+    if (STORE_DOMAIN && (STORE_SUBDOMAINS === '*' || (is_array(STORE_SUBDOMAINS) && in_array($slug, STORE_SUBDOMAINS, true))) && preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/D', $slug)) {
+        $scheme = parse_url(APP_URL, PHP_URL_SCHEME) ?: 'https';
+        return $scheme . '://' . $slug . '.' . STORE_DOMAIN . BASE_URL;
+    }
     return PRETTY_URLS ? base_url('loja/' . $slug) : base_url('store.php?slug=' . urlencode($slug));
 }
 
@@ -125,8 +130,12 @@ function csrf_field(): string
 
 function csrf_verify(): void
 {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+        http_response_code(413);
+        die('O envio excede o limite do servidor. Reduza as imagens ou ajuste post_max_size na hospedagem.');
+    }
     $token = $_POST['csrf_token'] ?? '';
-    if (!$token || !hash_equals($_SESSION['csrf_token'] ?? '', $token)) {
+    if (!is_string($token) || !$token || !hash_equals($_SESSION['csrf_token'] ?? '', $token)) {
         http_response_code(419);
         die('Sessão expirada ou token inválido. Volte e tente novamente.');
     }
@@ -219,33 +228,46 @@ function paginate_links(int $total, int $perPage, int $page): string
 
 function upload_image(array $file, string $folder, int $maxMb = MAX_UPLOAD_MB): ?string
 {
-    if (!isset($file['error']) || $file['error'] === UPLOAD_ERR_NO_FILE) return null;
-    if ($file['error'] !== UPLOAD_ERR_OK) throw new RuntimeException('Falha no upload da imagem (código ' . $file['error'] . ').');
-    if ($file['size'] > $maxMb * 1024 * 1024) throw new RuntimeException("A imagem excede o limite de {$maxMb}MB.");
-
-    $allowed = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', 'gif' => 'image/gif'];
-    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    if (!array_key_exists($ext, $allowed)) throw new RuntimeException('Formato inválido. Envie JPG, PNG, WEBP ou GIF.');
-
-    $info = @getimagesize($file['tmp_name']);
-    if ($info === false || !in_array($info['mime'], $allowed, true)) throw new RuntimeException('O arquivo enviado não é uma imagem válida.');
-
-    $folder = trim($folder, '/');
+    $error = $file['error'] ?? UPLOAD_ERR_NO_FILE;
+    if ($error === UPLOAD_ERR_NO_FILE) return null;
+    if (in_array($error, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true))
+        throw new RuntimeException('Imagem acima do limite permitido pelo servidor. Limite da loja: ' . $maxMb . ' MB; PHP: ' . ini_get('upload_max_filesize') . '.');
+    if ($error !== UPLOAD_ERR_OK) throw new RuntimeException('Upload incompleto ou indisponivel. Tente novamente.');
+    $tmp = $file['tmp_name'] ?? '';
+    if (!is_string($tmp) || !is_uploaded_file($tmp)) throw new RuntimeException('Upload invalido.');
+    $size = filesize($tmp);
+    if (!$size || $size > $maxMb * 1024 * 1024) throw new RuntimeException("A imagem excede o limite de {$maxMb} MB.");
+    $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif'];
+    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($tmp);
+    $info = @getimagesize($tmp);
+    if (!$info || !isset($allowed[$mime]) || $info['mime'] !== $mime)
+        throw new RuntimeException('Envie uma imagem JPG, PNG, WEBP ou GIF valida.');
+    if ($info[0] * $info[1] > 40000000) throw new RuntimeException('Imagem muito grande. Reduza sua resolucao.');
+    if (!in_array($folder, ['products', 'stores'], true)) throw new RuntimeException('Pasta de upload invalida.');
     $dir = UPLOAD_PATH . '/' . $folder;
-    if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) throw new RuntimeException('Não foi possível criar a pasta de uploads.');
-
-    $name = bin2hex(random_bytes(8)) . '-' . time() . '.' . $ext;
-    $dest = $dir . '/' . $name;
-    if (!move_uploaded_file($file['tmp_name'], $dest)) throw new RuntimeException('Não foi possível salvar a imagem.');
-
+    if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) throw new RuntimeException('Nao foi possivel criar a pasta de imagens.');
+    if (!is_writable($dir)) throw new RuntimeException('A pasta de imagens precisa de permissao de escrita na hospedagem.');
+    $name = bin2hex(random_bytes(16)) . '.' . $allowed[$mime];
+    if (!move_uploaded_file($tmp, $dir . '/' . $name)) throw new RuntimeException('Nao foi possivel salvar a imagem.');
     return $folder . '/' . $name;
 }
 
 function delete_upload(?string $relativePath): void
 {
     if (!$relativePath) return;
-    $full = UPLOAD_PATH . '/' . ltrim($relativePath, '/');
-    if (is_file($full)) @unlink($full);
+    $root = realpath(UPLOAD_PATH);
+    $full = realpath(UPLOAD_PATH . '/' . $relativePath);
+    if ($root && $full && str_starts_with(str_replace('\\', '/', $full), str_replace('\\', '/', $root) . '/') && is_file($full)) @unlink($full);
+}
+
+function store_request_slug(): ?string
+{
+    if (!STORE_DOMAIN) return null;
+    $host = strtolower(explode(':', $_SERVER['HTTP_HOST'] ?? '')[0]);
+    $suffix = '.' . STORE_DOMAIN;
+    if (!str_ends_with($host, $suffix)) return null;
+    $slug = substr($host, 0, -strlen($suffix));
+    return preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/D', $slug) && $slug !== 'www' ? $slug : null;
 }
 
 /* =========================================================
@@ -254,16 +276,20 @@ function delete_upload(?string $relativePath): void
 
 function wa_link(?string $phone, string $message = ''): string
 {
-    $digits = preg_replace('/\D+/', '', (string) $phone);
-    if (strlen($digits) <= 11) $digits = '55' . $digits;
-    return 'https://wa.me/' . $digits . '?text=' . urlencode($message);
+    require_once __DIR__ . '/catalog.php';
+    $digits = whatsapp_number($phone);
+    return $digits ? 'https://wa.me/' . $digits . '?text=' . rawurlencode($message) : '';
+
 }
 
 function instagram_url(?string $handle): ?string
 {
     $handle = trim((string) $handle);
     if ($handle === '') return null;
-    if (preg_match('~^https?://~i', $handle)) return $handle;
+    if (preg_match('~^https?://~i', $handle)) {
+        $host = strtolower(parse_url($handle, PHP_URL_HOST) ?: '');
+        return in_array($host, ['instagram.com', 'www.instagram.com'], true) ? $handle : null;
+    }
     return 'https://instagram.com/' . ltrim($handle, '@');
 }
 
@@ -276,7 +302,8 @@ function products_public_from(): string
     return " FROM products p
              JOIN stores s  ON s.id = p.store_id
              JOIN sellers se ON se.id = s.seller_id
-             WHERE p.status = 'active' AND s.active = 1 AND se.status = 'approved' ";
+             JOIN users owner ON owner.id = se.user_id
+             WHERE owner.status = 'active' AND p.status = 'active' AND s.active = 1 AND se.status = 'approved' ";
 }
 
 function get_categories(string $type = 'category'): array

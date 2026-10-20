@@ -105,10 +105,10 @@ $products = $st->fetchAll();
                 <a class="btn btn-sm btn-icon" target="_blank" href="<?= e(url_product($p['slug'])) ?>" title="Ver">
                   <i class="fa-solid fa-eye"></i>
                 </a>
-                <a class="btn btn-sm btn-icon" href="<?= base_url('seller/product-delete.php?id=' . $p['id']) ?>"
-                   data-confirm="Excluir este produto?" title="Excluir">
-                  <i class="fa-regular fa-trash-can"></i>
-                </a>
+                <form method="post" action="<?= e(base_url('seller/product-delete.php')) ?>" class="d-inline">
+                  <?= csrf_field() ?><input type="hidden" name="id" value="<?= (int) $p['id'] ?>">
+                  <button class="btn btn-sm btn-icon" data-confirm="Excluir este produto e suas fotos?" title="Excluir" aria-label="Excluir <?= e($p['name']) ?>"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button>
+                </form>
               </td>
             </tr>
           <?php endforeach; ?>

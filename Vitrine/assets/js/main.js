@@ -19,8 +19,12 @@ document.addEventListener('DOMContentLoaded', function () {
     thumb.addEventListener('click', function () {
       if (!mainImg) return;
       mainImg.src = this.dataset.full || this.src;
-      thumbs.forEach(t => t.classList.remove('active'));
+      thumbs.forEach(t => {
+        t.classList.remove('active');
+        t.setAttribute('aria-pressed', 'false');
+      });
       this.classList.add('active');
+      this.setAttribute('aria-pressed', 'true');
     });
     thumb.addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ' ') {
@@ -36,16 +40,40 @@ document.addEventListener('DOMContentLoaded', function () {
   const toggle = document.querySelector('.dash-toggle');
   const side = document.querySelector('.dash-side');
   if (toggle && side) {
-    toggle.addEventListener('click', () => side.classList.toggle('open'));
+    const mobile = window.matchMedia('(max-width: 991.98px)');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'dash-backdrop';
+    backdrop.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(backdrop);
+    const setOpen = (open, restoreFocus = true) => {
+      side.classList.toggle('open', open);
+      backdrop.classList.toggle('show', open && mobile.matches);
+      side.inert = mobile.matches && !open;
+      toggle.setAttribute('aria-expanded', String(open));
+      toggle.setAttribute('aria-label', open ? 'Fechar menu' : 'Abrir menu');
+      if (open) side.querySelector('a')?.focus();
+      else if (restoreFocus) toggle.focus();
+    };
+    setOpen(false, false);
+    mobile.addEventListener('change', () => setOpen(false, false));
+    toggle.addEventListener('click', () => setOpen(!side.classList.contains('open')));
     document.addEventListener('click', e => {
       if (window.innerWidth < 992 && side.classList.contains('open')
           && !side.contains(e.target) && !toggle.contains(e.target)) {
-        side.classList.remove('open');
+        setOpen(false);
       }
     });
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape' && side.classList.contains('open')) {
-        side.classList.remove('open');
+        setOpen(false);
+      }
+      if (e.key === 'Tab' && mobile.matches && side.classList.contains('open')) {
+        const links = [...side.querySelectorAll('a[href], button:not(:disabled)')];
+        const first = links[0];
+        const last = links[links.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); toggle.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); toggle.focus(); }
+        else if (document.activeElement === toggle) { e.preventDefault(); (e.shiftKey ? last : first)?.focus(); }
       }
     });
   }
@@ -126,7 +154,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
       if (this.dataset.logged !== '1') {
         if (confirm('Faça login para favoritar. Ir para o login?')) {
-          window.location.href = 'login.php';
+          window.location.href = (document.body.dataset.base || '') + 'login.php';
         }
         return;
       }
@@ -141,7 +169,7 @@ document.addEventListener('DOMContentLoaded', function () {
       fetch(baseUrl + 'favorite-toggle.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'type=' + (isProduct ? 'product' : 'store') + '&id=' + id
+        body: 'type=' + (isProduct ? 'product' : 'store') + '&id=' + encodeURIComponent(id) + '&csrf_token=' + encodeURIComponent(document.body.dataset.csrf || '')
       })
       .then(r => r.json())
       .then(data => {

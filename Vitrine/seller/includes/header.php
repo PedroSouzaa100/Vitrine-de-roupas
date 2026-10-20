@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../includes/auth.php';
+if (ob_get_level() === 0) ob_start();
 
 $seller = require_seller();
 $store  = get_seller_store((int) $seller['id']);
@@ -19,12 +20,13 @@ $flashes   = get_flashes();
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
-<link rel="stylesheet" href="<?= base_url('assets/css/style.css') ?>">
+<link rel="stylesheet" href="<?= base_url('assets/css/style.css') ?>?v=<?= filemtime(APP_ROOT . '/assets/css/style.css') ?>">
 </head>
 <body data-base="<?= base_url() ?>">
 
+<a href="#main" class="sr-only">Pular para o conteúdo</a>
 <div class="dash-wrap">
-  <aside class="dash-side">
+  <aside class="dash-side" id="dashSide" aria-label="Navegação do painel" tabindex="-1">
     <a class="brand brand-light" href="<?= base_url('index.php') ?>">
       <span class="brand-mark"><i class="fa-solid fa-shirt"></i></span>
       <span class="brand-text"><?= e(SITE_NAME) ?></span>
@@ -53,7 +55,7 @@ $flashes   = get_flashes();
     </ul>
   </aside>
 
-  <main class="dash-main">
+  <main class="dash-main" id="main">
     <div class="dash-top">
       <div>
         <h1 class="h4 fw-bold mb-0"><?= e($pageTitle) ?></h1>

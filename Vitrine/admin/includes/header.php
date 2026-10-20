@@ -26,8 +26,9 @@ $openReports  = (int) $pdo->query("SELECT COUNT(*) FROM reports WHERE status='op
 </head>
 <body data-base="<?= base_url() ?>">
 
+<a href="#main" class="sr-only">Pular para o conteúdo</a>
 <div class="dash-wrap">
-  <aside class="dash-side">
+  <aside class="dash-side" id="dashSide" aria-label="Navegação do painel" tabindex="-1">
     <a class="brand brand-light" href="<?= base_url('admin/dashboard.php') ?>">
       <span class="brand-mark"><i class="fa-solid fa-shield-halved"></i></span>
       <span class="brand-text"><?= e(SITE_NAME) ?> · Admin</span>
@@ -63,7 +64,7 @@ $openReports  = (int) $pdo->query("SELECT COUNT(*) FROM reports WHERE status='op
     </ul>
   </aside>
 
-  <main class="dash-main">
+  <main class="dash-main" id="main">
     <div class="dash-top">
       <h1 class="h4 fw-bold mb-0"><?= e($pageTitle) ?></h1>
     </div>

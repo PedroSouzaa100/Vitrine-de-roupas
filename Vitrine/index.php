@@ -1,6 +1,11 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 
+if (store_request_slug() !== null) {
+    require __DIR__ . '/store.php';
+    exit;
+}
+
 $pageTitle = SITE_NAME . ' — Marketplace de moda';
 $metaDescription = 'Descubra lojas de roupas masculinas, femininas e unissex. Catálogos completos, produtos em promoção e contato direto pelo WhatsApp.';
 
@@ -49,47 +54,60 @@ $genders = get_categories('gender');
 require __DIR__ . '/includes/header.php';
 ?>
 
-<section class="hero mb-4">
-  <div class="hero-inner">
-    <div class="row align-items-center g-4">
-      <div class="col-lg-7">
-        <span class="badge-soft mb-3 d-inline-block">
-          <i class="fa-solid fa-bolt"></i> Moda masculina, feminina e unissex
-        </span>
-        <h1>Encontre seu estilo nas melhores lojas de moda.</h1>
-        <p class="mt-3 mb-4">
-          Catálogos atualizados, contato direto com o vendedor e produtos de lojas verificadas de todo o Brasil.
-        </p>
-        <div class="d-flex flex-wrap gap-2">
-          <a href="<?= base_url('search.php') ?>" class="btn btn-accent px-4">
-            <i class="fa-solid fa-bag-shopping me-2"></i> Explorar produtos
-          </a>
-          <a href="<?= base_url('register-seller.php') ?>" class="btn btn-outline-light rounded-pill px-4">
-            Criar minha loja
-          </a>
-        </div>
+<div class="container py-4 home-content">
+<nav class="discovery-nav" aria-label="Explore os catálogos">
+  <span>ENCONTRE SEU ESTILO</span>
+  <a href="<?= base_url('search.php') ?>">Todos os produtos <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+  <?php foreach ($genders as $g): ?>
+    <a href="<?= base_url('search.php?gender=' . urlencode($g['slug'])) ?>"><?= e($g['name']) ?></a>
+  <?php endforeach; ?>
+  <a href="<?= base_url('search.php?promo=1') ?>"><i class="fa-solid fa-tag" aria-hidden="true"></i> Em promoção</a>
+</nav>
+<section class="hero" aria-labelledby="hero-title">
+  <div class="hero-inner hero-layout">
+    <div class="hero-copy">
+      <span class="badge-soft mb-3"><i class="fa-solid fa-shirt" aria-hidden="true"></i> Moda feminina, masculina e unissex</span>
+      <h1 id="hero-title">Seu estilo.<br><em>Novas possibilidades.</em></h1>
+      <p class="mt-3 mb-4">Diferentes lojas, estilos e possibilidades para você. Explore moda feminina, masculina e unissex e converse diretamente com quem vende.</p>
+      <div class="hero-actions">
+        <a href="<?= base_url('search.php') ?>" class="btn btn-brand">Explorar produtos <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+        <a href="<?= base_url('stores.php') ?>" class="btn btn-outline-brand"><i class="fa-solid fa-store" aria-hidden="true"></i> Conhecer as lojas</a>
       </div>
-      <div class="col-lg-5 d-none d-lg-block">
-        <div class="row g-3">
-          <?php foreach (array_slice($recentProducts, 0, 2) as $rp): ?>
-            <div class="col-6">
-              <a href="<?= e(url_product($rp['slug'])) ?>" class="d-block rounded-4 overflow-hidden">
-                <img src="<?= e(img_url($rp['main_image'])) ?>" alt="<?= e($rp['name']) ?>"
-                     style="aspect-ratio:3/4;object-fit:cover;width:100%">
-              </a>
-            </div>
-          <?php endforeach; ?>
+      <div class="hero-note"><i class="fa-regular fa-comment-dots" aria-hidden="true"></i> Descubra online. Converse com a loja. Compre do seu jeito.</div>
+    </div>
+    <div class="hero-showcase">
+      <?php foreach (array_slice($recentProducts, 0, 2) as $rp): ?>
+        <a href="<?= e(url_product($rp['slug'])) ?>" class="hero-look">
+          <img src="<?= e(img_url($rp['main_image'])) ?>" alt="<?= e($rp['name']) ?>" width="400" height="500" decoding="async">
+          <div class="hero-look-caption">
+            <span><?= e($rp['name']) ?></span>
+            <strong><?= money(!empty($rp['promo_price']) && $rp['promo_price'] > 0 && $rp['promo_price'] < $rp['price'] ? $rp['promo_price'] : $rp['price']) ?></strong>
+          </div>
+        </a>
+      <?php endforeach; ?>
+      <?php if (!$recentProducts): ?>
+        <div class="hero-placeholder">
+          <i class="fa-solid fa-store" aria-hidden="true"></i>
+          <h2>Um novo espaço para a sua loja.</h2>
+          <p>Publique seu catálogo e ajude novos clientes a descobrir seus produtos.</p>
+          <a class="link-more mt-3" href="<?= base_url('register-seller.php') ?>">Criar minha loja <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
         </div>
-      </div>
+      <?php endif; ?>
     </div>
   </div>
 </section>
+<div class="shopping-guide" aria-label="Como comprar no Vitrine">
+  <div class="shopping-guide-item"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><div><strong>Encontre sua próxima peça</strong><p>Explore categorias, novidades e promoções.</p></div></div>
+  <div class="shopping-guide-item"><i class="fa-solid fa-store" aria-hidden="true"></i><div><strong>Conheça quem vende</strong><p>Veja o catálogo e as informações da loja.</p></div></div>
+  <div class="shopping-guide-item"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i><div><strong>Converse e combine a compra</strong><p>Tire dúvidas diretamente com o vendedor.</p></div></div>
+</div>
 
 <!-- Categorias populares -->
 <section class="section pt-0">
   <div class="section-head">
     <div>
-      <h2>Categorias populares</h2>
+      <span class="section-kicker">Explore do seu jeito</span>
+      <h2>O que você procura?</h2>
       <p>Navegue pelo que você procura</p>
     </div>
     <a class="link-more" href="<?= base_url('search.php') ?>">Ver tudo <i class="fa-solid fa-arrow-right"></i></a>
@@ -110,6 +128,7 @@ require __DIR__ . '/includes/header.php';
 <section class="section pt-0">
   <div class="section-head">
     <div>
+      <span class="section-kicker">Novas descobertas</span>
       <h2>Chegou agora</h2>
       <p>Os produtos mais recentes das lojas</p>
     </div>
@@ -124,7 +143,7 @@ require __DIR__ . '/includes/header.php';
       <?php endforeach; ?>
     </div>
   <?php else: ?>
-    <div class="alert alert-light border">Nenhum produto publicado ainda.</div>
+    <div class="empty-state"><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i><h3>Novas peças estão a caminho</h3><p>Enquanto isso, conheça as lojas e seus catálogos.</p><a class="btn btn-outline-brand" href="<?= base_url('stores.php') ?>">Explorar lojas</a></div>
   <?php endif; ?>
 </section>
 
@@ -152,8 +171,9 @@ require __DIR__ . '/includes/header.php';
 <section class="section pt-0">
   <div class="section-head">
     <div>
+      <span class="section-kicker">Conheça os vendedores</span>
       <h2>Lojas em destaque</h2>
-      <p>Vendedores verificados na plataforma</p>
+      <p>Explore os catálogos e encontre novas lojas favoritas</p>
     </div>
     <a class="link-more" href="<?= base_url('stores.php') ?>">Ver todas <i class="fa-solid fa-arrow-right"></i></a>
   </div>
@@ -172,7 +192,7 @@ require __DIR__ . '/includes/header.php';
             </a>
             <h3 class="store-name">
               <a href="<?= e(url_store($store['slug'])) ?>"><?= e($store['display_name'] ?: $store['name']) ?></a>
-              <?php if ($store['verified']): ?><i class="fa-solid fa-circle-check text-primary small"></i><?php endif; ?>
+              <?php if ($store['verified']): ?><i class="fa-solid fa-circle-check text-accent small"></i><?php endif; ?>
             </h3>
             <div class="store-meta">
               <span><i class="fa-solid fa-shirt"></i> <?= (int) $store['total_products'] ?> produtos</span>
@@ -190,8 +210,9 @@ require __DIR__ . '/includes/header.php';
 <!-- CTA Vendedor -->
 <section class="section pt-0">
   <div class="cta-seller">
-    <h2>Tenha sua loja online em poucos minutos.</h2>
-    <p class="text-muted mx-auto mb-4" style="max-width:560px">
+    <span class="section-kicker text-white">Para quem empreende</span>
+    <h2>Sua loja merece ser descoberta.</h2>
+    <p class="mx-auto mb-4">
       Crie seu catálogo, adicione produtos com fotos, tamanhos e cores e receba contatos direto no seu WhatsApp.
     </p>
     <a href="<?= base_url('register-seller.php') ?>" class="btn btn-brand px-4">
@@ -199,5 +220,7 @@ require __DIR__ . '/includes/header.php';
     </a>
   </div>
 </section>
+
+</div>
 
 <?php require __DIR__ . '/includes/footer.php'; ?>

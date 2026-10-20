@@ -25,8 +25,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = current_user();
         set_flash('success', 'Bem-vindo(a), ' . $user['name'] . '!');
         $redirect = $_GET['redirect'] ?? '';
-        if ($redirect && str_starts_with($redirect, '/')) {
-            redirect($redirect);
+        if (is_string($redirect) && str_starts_with($redirect, BASE_URL) && !str_starts_with($redirect, '//') && !str_contains($redirect, '\\') && !preg_match('/[\r\n]/', $redirect)) {
+            redirect(substr($redirect, strlen(BASE_URL)));
         }
         redirect($user['role'] === 'admin' ? 'admin/dashboard.php' : ($user['role'] === 'seller' ? 'seller/dashboard.php' : 'index.php'));
     } elseif (!$errors) {

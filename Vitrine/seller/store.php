@@ -1,6 +1,9 @@
 <?php
-require_once __DIR__ . '/includes/header.php';
-
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/catalog.php';
+$seller = require_seller();
+$store = get_seller_store((int) $seller['id']);
+if (!$store) { http_response_code(404); exit('Loja não encontrada.'); }
 $pdo = db();
 $errors = [];
 $genders = get_categories('gender');
@@ -8,19 +11,31 @@ $genders = get_categories('gender');
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify();
 
-    $name        = trim($_POST['name'] ?? '');
-    $displayName = trim($_POST['display_name'] ?? '');
-    $description = trim($_POST['description'] ?? '');
-    $categoryId  = $_POST['category_id'] !== '' ? (int) $_POST['category_id'] : null;
-    $instagram   = trim($_POST['instagram'] ?? '');
-    $whatsapp    = trim($_POST['whatsapp'] ?? '');
-    $website     = trim($_POST['website'] ?? '');
-    $city        = trim($_POST['city'] ?? '');
-    $state       = strtoupper(substr(trim($_POST['state'] ?? ''), 0, 2));
-    $address     = trim($_POST['address'] ?? '');
+    $name        = input_text($_POST, 'name');
+    $displayName = input_text($_POST, 'display_name');
+    $description = input_text($_POST, 'description');
+    $categoryId  = null;
+    $categoryInput = input_text($_POST, 'category_id');
+    if ($categoryInput !== '') {
+        $categoryId = filter_var($categoryInput, FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
+        if ($categoryId === false || !in_array($categoryId, array_map('intval', array_column($genders, 'id')), true)) $errors[] = 'Selecione uma categoria de loja válida.';
+    }
+    $instagram   = input_text($_POST, 'instagram');
+    $whatsapp    = input_text($_POST, 'whatsapp');
+    $website     = input_text($_POST, 'website');
+    $city        = input_text($_POST, 'city');
+    $state       = strtoupper(substr(input_text($_POST, 'state'), 0, 2));
+    $address     = input_text($_POST, 'address');
 
     if (mb_strlen($name) < 3) $errors[] = 'Nome da loja muito curto.';
-    if ($whatsapp === '') $errors[] = 'Informe o WhatsApp.';
+    foreach (['name'=>[$name,140], 'display_name'=>[$displayName,140], 'description'=>[$description,10000], 'instagram'=>[$instagram,120], 'website'=>[$website,180], 'city'=>[$city,90], 'address'=>[$address,200]] as $field=>[$value,$limit]) {
+        if (mb_strlen($value) > $limit) $errors[] = 'O campo ' . $field . ' excede o tamanho permitido.';
+    }
+    $phone = whatsapp_number($whatsapp, false);
+    if (!$phone) $errors[] = 'Informe o WhatsApp com código do país e DDD, por exemplo +55 11 99999-9999.';
+    else $whatsapp = $phone;
+
+    if ($website !== '' && (!filter_var($website, FILTER_VALIDATE_URL) || !in_array(strtolower(parse_url($website, PHP_URL_SCHEME) ?: ''), ['http', 'https'], true))) $errors[] = 'Informe um site com http:// ou https://.';
 
     $logoPath = $store['logo'];
     $bannerPath = $store['banner'];
@@ -29,35 +44,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             if (!empty($_FILES['logo']['name'])) {
                 $new = upload_image($_FILES['logo'], 'stores');
-                if ($new) { if ($store['logo']) delete_upload($store['logo']); $logoPath = $new; }
+                if ($new) { $logoPath = $new; }
             }
             if (!empty($_FILES['banner']['name'])) {
                 $new = upload_image($_FILES['banner'], 'stores');
-                if ($new) { if ($store['banner']) delete_upload($store['banner']); $bannerPath = $new; }
+                if ($new) { $bannerPath = $new; }
             }
         } catch (RuntimeException $ex) {
+            if ($logoPath !== $store['logo']) delete_upload($logoPath);
+            if ($bannerPath !== $store['banner']) delete_upload($bannerPath);
             $errors[] = $ex->getMessage();
         }
     }
 
     if (!$errors) {
-        $slug = ($name !== $store['name'])
-            ? unique_slug('stores', slugify($name), (int) $store['id'])
-            : $store['slug'];
+        try {
+        $slug = $store['slug'];
 
         $st = $pdo->prepare("
             UPDATE stores SET category_id=?, name=?, display_name=?, slug=?, description=?,
                 logo=?, banner=?, instagram=?, whatsapp=?, website=?, city=?, state=?, address=?
-            WHERE id=?
+            WHERE id=? AND seller_id=?
         ");
         $st->execute([
             $categoryId, $name, $displayName ?: $name, $slug, $description ?: null,
             $logoPath, $bannerPath, $instagram ?: null, $whatsapp ?: null, $website ?: null,
             $city ?: null, $state ?: null, $address ?: null,
-            (int) $store['id']
+            (int) $store['id'], (int) $seller['id']
         ]);
+        if ($logoPath !== $store['logo']) delete_upload($store['logo']);
+        if ($bannerPath !== $store['banner']) delete_upload($store['banner']);
         set_flash('success', 'Loja atualizada com sucesso.');
         redirect('seller/store.php');
+        } catch (PDOException $exception) {
+            if ($logoPath !== $store['logo']) delete_upload($logoPath);
+            if ($bannerPath !== $store['banner']) delete_upload($bannerPath);
+            error_log('Falha ao atualizar loja: ' . $exception->getMessage());
+            $errors[] = 'Não foi possível atualizar a loja. Tente novamente.';
+        }
     }
 }
 
@@ -65,6 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $st = $pdo->prepare("SELECT * FROM stores WHERE id=?");
 $st->execute([(int) $store['id']]);
 $store = $st->fetch();
+require __DIR__ . '/includes/header.php';
 ?>
 <h1 class="h4 fw-bold mb-4">Minha loja</h1>
 
@@ -106,7 +131,7 @@ $store = $st->fetch();
         </div>
         <div class="col-md-4">
           <label class="form-label">WhatsApp *</label>
-          <input type="text" name="whatsapp" class="form-control" value="<?= e($store['whatsapp']) ?>">
+          <input type="tel" name="whatsapp" class="form-control" required minlength="8" maxlength="25" pattern="\+?[0-9\s.\(\)\-]{8,25}" value="<?= e($store['whatsapp']) ?>" placeholder="+55 11 99999-9999"><div class="helper">Inclua código do país e DDD. Use um número com WhatsApp ativo; não verificamos a ativação.</div>
         </div>
         <div class="col-md-4">
           <label class="form-label">Instagram</label>

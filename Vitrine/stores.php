@@ -26,7 +26,7 @@ $st = $pdo->prepare("SELECT COUNT(*) FROM stores s JOIN sellers se ON se.id = s.
 $st->execute($params);
 $total = (int) $st->fetchColumn();
 
-$sql = "SELECT s.*, 
+$sql = "SELECT s.*,
           (SELECT COUNT(*) FROM products p WHERE p.store_id = s.id AND p.status='active') AS total_products
         FROM stores s JOIN sellers se ON se.id = s.seller_id"
      . $where . " ORDER BY s.is_featured DESC, s.views DESC LIMIT "

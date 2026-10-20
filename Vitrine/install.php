@@ -1,14 +1,32 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 
-if (!DEBUG) {
-    http_response_code(404);
-    die('Not found.');
+$isLocalInstall = DEBUG && in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1', '::ffff:127.0.0.1'], true);
+if (!$isLocalInstall && strlen(INSTALL_TOKEN) < 32) {
+    http_response_code(404); exit('Not found.');
+}
+header('Cache-Control: no-store');
+if (!$isLocalInstall && ($_SESSION['installer_authorized'] ?? '') !== hash('sha256', INSTALL_TOKEN)) {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        csrf_verify();
+        rate_limit('installer', 5, 900);
+        $token = $_POST['install_token'] ?? '';
+        if (is_string($token) && hash_equals(INSTALL_TOKEN, $token)) {
+            session_regenerate_id(true);
+            $_SESSION['installer_authorized'] = hash('sha256', INSTALL_TOKEN);
+            redirect('install.php');
+        }
+        http_response_code(403);
+    }
+    echo '<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Instalacao</title><h1>Autorizar instalacao</h1><form method="post">'
+        . csrf_field() . '<label>Chave de instalacao <input type="password" name="install_token" required autocomplete="off"></label><button>Continuar</button></form></html>';
+    exit;
 }
 
 $pdo = db();
 $st = $pdo->query("SELECT COUNT(*) FROM users WHERE role='admin'");
 $hasAdmin = $st->fetchColumn() > 0;
+if ($hasAdmin && !$isLocalInstall) { http_response_code(404); exit('Not found.'); }
 
 $done = false;
 $errors = [];
@@ -36,6 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$hasAdmin) {
     if (!$errors) {
         $st = $pdo->prepare("INSERT INTO users (name,email,password,role) VALUES (?,?,?,'admin')");
         $st->execute([$name, $email, password_hash($pass, PASSWORD_DEFAULT)]);
+        unset($_SESSION['installer_authorized']);
         $done = true;
     }
 }

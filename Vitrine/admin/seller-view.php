@@ -1,59 +1,66 @@
 <?php
-require_once __DIR__ . '/includes/header.php';
-
+require_once __DIR__ . '/../includes/auth.php';
+require_admin();
 $pdo = db();
-$id = (int) ($_GET['id'] ?? 0);
-
-// Ações
+$id = filter_var($_GET['id'] ?? '', FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
+if (!$id) { http_response_code(404); exit('Vendedor nao encontrado.'); }
+$query = $pdo->prepare("SELECT se.*, u.name AS owner_name, u.email, u.phone, u.role AS owner_role, u.created_at AS user_created,
+    s.id AS store_id, s.name, s.slug, s.display_name, s.description, s.logo, s.banner, s.whatsapp,
+    s.instagram, s.website, s.city, s.state, s.views
+    FROM sellers se JOIN users u ON u.id = se.user_id LEFT JOIN stores s ON s.seller_id = se.id WHERE se.id = ?");
+$query->execute([$id]);
+$row = $query->fetch();
+if (!$row) { set_flash('danger', 'Vendedor nao encontrado.'); redirect('admin/sellers.php'); }
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify();
-    $action = $_POST['action'] ?? '';
-    $reason = trim($_POST['reason'] ?? '');
-
-    $allowed = ['approve','reject','suspend','reactivate','delete'];
-    if (in_array($action, $allowed, true)) {
-        if ($action === 'delete') {
-            $pdo->prepare("DELETE FROM users WHERE id = (SELECT user_id FROM sellers WHERE id=?)")->execute([$id]);
-            log_admin('delete_seller', 'seller', $id);
-            set_flash('success', 'Vendedor excluído.');
-            redirect('admin/sellers.php');
+    $action = is_string($_POST['action'] ?? null) ? $_POST['action'] : '';
+    $reason = is_string($_POST['reason'] ?? null) ? trim($_POST['reason']) : '';
+    if ($action === 'delete') {
+        if ($row['owner_role'] !== 'seller' || (int) $row['user_id'] === (int) current_user()['id']) {
+            http_response_code(403); exit('Esta conta nao pode ser excluida por esta acao.');
         }
-
-        $newStatus = match($action) {
-            'approve'    => 'approved',
-            'reject'     => 'rejected',
-            'suspend'    => 'suspended',
-            'reactivate' => 'approved',
-            default      => null,
-        };
-
-        $pdo->prepare("UPDATE sellers SET status=?, rejection_reason=?, reviewed_by=?, reviewed_at=NOW() WHERE id=?")
+        $paths = [];
+        try {
+            $pdo->beginTransaction();
+            $lock = $pdo->prepare('SELECT id FROM users WHERE id = ? AND role = ? FOR UPDATE');
+            $lock->execute([$row['user_id'], 'seller']);
+            if (!$lock->fetchColumn()) throw new RuntimeException('Vendedor indisponivel.');
+            $photos = $pdo->prepare('SELECT p.main_image AS path FROM products p JOIN stores s ON s.id = p.store_id WHERE s.seller_id = ? UNION SELECT pi.image_path AS path FROM product_images pi JOIN products p ON p.id = pi.product_id JOIN stores s ON s.id = p.store_id WHERE s.seller_id = ? UNION SELECT logo AS path FROM stores WHERE seller_id = ? UNION SELECT banner AS path FROM stores WHERE seller_id = ?');
+            $photos->execute([$id, $id, $id, $id]);
+            $paths = array_values(array_filter($photos->fetchAll(PDO::FETCH_COLUMN)));
+            $pdo->prepare("DELETE FROM users WHERE id = ? AND role = 'seller'")->execute([$row['user_id']]);
+            log_admin('delete_seller', 'seller', $id, 'Loja: ' . ($row['name'] ?? 'Sem loja'));
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            error_log('Falha ao excluir vendedor: ' . $exception->getMessage());
+            set_flash('danger', 'Nao foi possivel excluir o vendedor. Tente novamente.');
+            redirect('admin/seller-view.php?id=' . $id);
+        }
+        // Arquivos ainda referenciados por outra loja ou produto sao preservados.
+        $references = $pdo->prepare('SELECT (SELECT COUNT(*) FROM products WHERE main_image = ?) + (SELECT COUNT(*) FROM product_images WHERE image_path = ?) + (SELECT COUNT(*) FROM stores WHERE logo = ? OR banner = ?)');
+        foreach ($paths as $path) {
+            $references->execute([$path, $path, $path, $path]);
+            if (!(int) $references->fetchColumn()) delete_upload($path);
+        }
+        set_flash('success', 'Vendedor, loja e produtos excluidos.');
+        redirect('admin/sellers.php');
+    }
+    $newStatus = match ($action) {
+        'approve', 'reactivate' => 'approved', 'reject' => 'rejected', 'suspend' => 'suspended', default => null,
+    };
+    if ($newStatus) {
+        $pdo->prepare('UPDATE sellers SET status=?, rejection_reason=?, reviewed_by=?, reviewed_at=NOW() WHERE id=?')
             ->execute([$newStatus, $action === 'reject' ? $reason : null, current_user()['id'], $id]);
-
         log_admin('update_seller_status:' . $newStatus, 'seller', $id, $reason);
-
         set_flash('success', 'Status atualizado para ' . $newStatus . '.');
         redirect('admin/seller-view.php?id=' . $id);
     }
 }
-
-$st = $pdo->prepare("
-    SELECT se.*, u.name AS owner_name, u.email, u.phone, u.created_at AS user_created,
-           s.*
-    FROM sellers se
-    JOIN users u ON u.id = se.user_id
-    LEFT JOIN stores s ON s.seller_id = se.id
-    WHERE se.id = ?
-");
-$st->execute([$id]);
-$row = $st->fetch();
-
-if (!$row) { set_flash('danger', 'Vendedor não encontrado.'); redirect('admin/sellers.php'); }
-
-// Produtos do vendedor
-$st = $pdo->prepare("SELECT COUNT(*) FROM products WHERE store_id=?");
-$st->execute([$row['id'] ?? 0]);
-$productCount = (int) $st->fetchColumn();
+$query = $pdo->prepare('SELECT COUNT(*) FROM products WHERE store_id = ?');
+$query->execute([$row['store_id'] ?? 0]);
+$productCount = (int) $query->fetchColumn();
+require __DIR__ . '/includes/header.php';
 ?>
 <div class="row g-4">
   <div class="col-lg-8">
@@ -145,13 +152,14 @@ $productCount = (int) $st->fetchColumn();
         </form>
       <?php endif; ?>
 
-      <form method="post" onsubmit="return confirm('Excluir definitivamente?')">
+      <form method="post">
         <?= csrf_field() ?>
         <input type="hidden" name="action" value="delete">
-        <button class="btn btn-outline-danger w-100 mt-2">
-          <i class="fa-regular fa-trash-can me-2"></i> Excluir
+        <button class="btn btn-outline-danger w-100 mt-2" data-confirm="Excluir este vendedor, sua loja e todos os produtos definitivamente?">
+          <i class="fa-regular fa-trash-can me-2"></i> Excluir vendedor e loja
         </button>
       </form>
+      <p class="helper mt-2 mb-0">Excluir remove a conta do vendedor, a loja e os produtos. Para apenas tirar a loja do ar, use Suspender.</p>
     </div>
 
     <div class="form-card">

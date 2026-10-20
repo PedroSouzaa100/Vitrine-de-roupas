@@ -9,13 +9,7 @@ security_headers();
 
 function current_user(): ?array
 {
-    static $user = null;
-    static $loaded = false;
-
-    if ($loaded) return $user;
-    $loaded = true;
-
-    if (empty($_SESSION['user_id'])) return $user = null;
+    if (empty($_SESSION['user_id'])) return null;
 
     $st = db()->prepare("SELECT id, name, email, phone, role, status, created_at FROM users WHERE id = ? AND status = 'active' LIMIT 1");
     $st->execute([$_SESSION['user_id']]);

@@ -12,13 +12,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $new      = $_POST['new_password'] ?? '';
     $confirm  = $_POST['confirm_password'] ?? '';
 
-    if (!password_verify($current, $user['password'])) $errors[] = 'Senha atual incorreta.';
+    $passwordQuery = $pdo->prepare('SELECT password FROM users WHERE id = ?');
+    $passwordQuery->execute([$user['id']]);
+    if (!password_verify($current, (string) $passwordQuery->fetchColumn())) $errors[] = 'Senha atual incorreta.';
     if (strlen($new) < 8)                              $errors[] = 'A nova senha precisa ter 8+ caracteres.';
     if ($new !== $confirm)                             $errors[] = 'A confirmação não confere.';
 
     if (!$errors) {
         $st = $pdo->prepare("UPDATE users SET password=? WHERE id=?");
         $st->execute([password_hash($new, PASSWORD_DEFAULT), $user['id']]);
+        session_regenerate_id(true);
         set_flash('success', 'Senha alterada com sucesso.');
         redirect('seller/settings.php');
     }

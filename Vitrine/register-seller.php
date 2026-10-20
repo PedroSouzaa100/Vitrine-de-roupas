@@ -5,6 +5,7 @@ if (is_logged_in()) {
     redirect(is_seller() ? 'seller/dashboard.php' : 'index.php');
 }
 
+require_once __DIR__ . '/includes/catalog.php';
 $pageTitle = 'Criar minha loja';
 $errors = [];
 $genders = get_categories('gender');
@@ -12,11 +13,12 @@ $old = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_verify();
+    rate_limit('register_seller', 8, 900);
 
     $fields = ['name','email','phone','document','store_name','display_name','description',
                'category_id','instagram','whatsapp','website','city','state','address'];
     foreach ($fields as $f) {
-        $old[$f] = trim($_POST[$f] ?? '');
+        $old[$f] = input_text($_POST, $f);
     }
     $password = $_POST['password'] ?? '';
     $confirm  = $_POST['password_confirm'] ?? '';
@@ -28,7 +30,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (strlen($password) < 8)                              $errors[] = 'A senha deve ter ao menos 8 caracteres.';
     if ($password !== $confirm)                             $errors[] = 'As senhas não coincidem.';
     if (mb_strlen($old['store_name']) < 3)                  $errors[] = 'Informe o nome da loja.';
-    if ($old['whatsapp'] === '')                            $errors[] = 'Informe um WhatsApp de contato.';
+    $phone = whatsapp_number($old['whatsapp'], false);
+    if (!$phone) $errors[] = 'Informe WhatsApp com código do país e DDD, como +55 11 99999-9999.';
+    else $old['whatsapp'] = $phone;
 
     if (!$errors) {
         $st = db()->prepare("SELECT 1 FROM users WHERE email = ?");
@@ -38,6 +42,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    if ($old['website'] !== '' && (!filter_var($old['website'], FILTER_VALIDATE_URL) || !in_array(strtolower(parse_url($old['website'], PHP_URL_SCHEME) ?: ''), ['http', 'https'], true))) $errors[] = 'Informe um site com http:// ou https://.';
+
     // Uploads
     $logoPath = $bannerPath = null;
     if (!$errors) {
@@ -45,6 +51,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $logoPath   = upload_image($_FILES['logo'] ?? [], 'stores');
             $bannerPath = upload_image($_FILES['banner'] ?? [], 'stores');
         } catch (RuntimeException $ex) {
+            delete_upload($logoPath);
+            delete_upload($bannerPath);
             $errors[] = $ex->getMessage();
         }
     }
@@ -184,7 +192,7 @@ require __DIR__ . '/includes/header.php';
           </div>
           <div class="col-md-4">
             <label class="form-label">WhatsApp *</label>
-            <input type="text" name="whatsapp" class="form-control" value="<?= e($old['whatsapp'] ?? '') ?>" placeholder="(11) 99999-9999">
+            <input type="tel" name="whatsapp" required minlength="8" maxlength="25" pattern="\+?[0-9\s.\(\)\-]{8,25}" class="form-control" value="<?= e($old['whatsapp'] ?? '') ?>" placeholder="+55 11 99999-9999"><div class="helper">Inclua país e DDD. Cadastre um número com WhatsApp ativo.</div>
           </div>
           <div class="col-md-4">
             <label class="form-label">Instagram</label>
